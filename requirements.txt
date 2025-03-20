@@ -1,4 +1,4 @@
-# requirements.txt
 streamlit
-selenium
-webdriver-manager
+requests
+beautifulsoup4
+python-dateutil
