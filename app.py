@@ -77,55 +77,157 @@ def login_to_amazon(session, email, password):
         
         response = session.get(signin_url, params=params)
         
+        # For debugging - save HTML to examine the form structure
+        with open(os.path.join(temp_dir, "amazon_login_page.html"), "w", encoding="utf-8") as f:
+            f.write(response.text)
+        
         # Extract form data
         soup = BeautifulSoup(response.text, 'html.parser')
-        form = soup.find('form', {'name': 'signIn'})
+        
+        # Try multiple form selectors
+        form = None
+        for form_id in ['signIn', 'ap_signin_form', 'ap-signin-form']:
+            form = soup.find('form', {'name': form_id}) or soup.find('form', {'id': form_id})
+            if form:
+                break
+                
+        # If still not found, try to find any form with password field
+        if not form:
+            forms = soup.find_all('form')
+            for f in forms:
+                if f.find('input', {'type': 'password'}) or f.find('input', {'name': 'password'}):
+                    form = f
+                    break
+        
+        # If still not found, try to find any form with email field        
+        if not form:
+            forms = soup.find_all('form')
+            for f in forms:
+                if f.find('input', {'type': 'email'}) or f.find('input', {'name': 'email'}):
+                    form = f
+                    break
         
         if not form:
-            return False, "Couldn't find the sign-in form. Amazon may have changed their page layout."
+            # Last resort - just find any form
+            forms = soup.find_all('form')
+            if forms:
+                form = forms[0]
+            else:
+                return False, "Couldn't find any form on the login page. Amazon may have significantly changed their login process."
         
         # Get hidden form inputs
         form_data = {}
         for input_tag in form.find_all('input'):
             name = input_tag.get('name')
-            value = input_tag.get('value')
-            if name and value:
+            value = input_tag.get('value', '')
+            if name:
                 form_data[name] = value
                 
+        # Find the email input field
+        email_field_name = None
+        for input_tag in form.find_all('input'):
+            input_type = input_tag.get('type', '')
+            input_name = input_tag.get('name', '')
+            input_id = input_tag.get('id', '')
+            
+            if input_type == 'email' or 'email' in input_name.lower() or 'email' in input_id.lower():
+                email_field_name = input_name
+                break
+        
+        # If not found, try some common field names
+        if not email_field_name:
+            for field_name in ['email', 'ap_email', 'username', 'login']:
+                if field_name in form_data:
+                    email_field_name = field_name
+                    break
+        
         # Add email
-        form_data['email'] = email
+        if email_field_name:
+            form_data[email_field_name] = email
+        else:
+            # If we can't find email field, add email to common field names
+            for field_name in ['email', 'ap_email', 'username', 'login']:
+                form_data[field_name] = email
         
         # Submit email form
         post_url = form.get('action')
-        if not post_url.startswith('http'):
+        if not post_url:
+            post_url = signin_url
+        elif not post_url.startswith('http'):
             post_url = 'https://www.amazon.com' + post_url
             
         response = session.post(post_url, data=form_data)
         
+        # For debugging - save HTML to examine the password form structure
+        with open(os.path.join(temp_dir, "amazon_password_page.html"), "w", encoding="utf-8") as f:
+            f.write(response.text)
+        
         # Now handle password page
         soup = BeautifulSoup(response.text, 'html.parser')
-        form = soup.find('form', {'name': 'signIn'})
+        
+        # Try multiple form selectors for password page
+        form = None
+        for form_id in ['signIn', 'ap_signin_form', 'ap-signin-form']:
+            form = soup.find('form', {'name': form_id}) or soup.find('form', {'id': form_id})
+            if form:
+                break
+                
+        # If still not found, try to find any form with password field
+        if not form:
+            forms = soup.find_all('form')
+            for f in forms:
+                if f.find('input', {'type': 'password'}) or f.find('input', {'name': 'password'}):
+                    form = f
+                    break
         
         if not form:
-            return False, "Couldn't find the password form. Amazon may have changed their page layout."
+            return False, "Couldn't find the password form. Amazon may have changed their page layout. Check the debug files in the temp directory."
         
         # Get hidden form inputs for password page
         form_data = {}
         for input_tag in form.find_all('input'):
             name = input_tag.get('name')
-            value = input_tag.get('value')
-            if name and value:
+            value = input_tag.get('value', '')
+            if name:
                 form_data[name] = value
                 
+        # Find the password input field
+        password_field_name = None
+        for input_tag in form.find_all('input'):
+            input_type = input_tag.get('type', '')
+            input_name = input_tag.get('name', '')
+            
+            if input_type == 'password' or 'password' in input_name.lower():
+                password_field_name = input_name
+                break
+        
+        # If not found, try some common field names
+        if not password_field_name:
+            for field_name in ['password', 'ap_password']:
+                if field_name in form_data:
+                    password_field_name = field_name
+                    break
+        
         # Add password
-        form_data['password'] = password
+        if password_field_name:
+            form_data[password_field_name] = password
+        else:
+            # If we can't find password field, add password to common field names
+            for field_name in ['password', 'ap_password']:
+                form_data[field_name] = password
         
         # Submit password form
         post_url = form.get('action')
-        if not post_url.startswith('http'):
+        if not post_url:
+            post_url = signin_url
+        elif not post_url.startswith('http'):
             post_url = 'https://www.amazon.com' + post_url
             
         response = session.post(post_url, data=form_data)
+        
+        # Save final response for debugging
+        with open(os.path.join(temp_dir, "amazon_post_login.html"), "w", encoding="utf-8") as f:
+            f.write(response.text)
         
         # Check if login was successful
         if 'auth-error-message' in response.text or 'signIn' in response.url:
