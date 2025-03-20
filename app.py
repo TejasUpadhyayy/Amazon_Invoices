@@ -8,23 +8,45 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import platform
+import tempfile
 
 st.title("📦 Amazon Invoice & Order Summary Downloader")
 st.write("This app logs into Amazon, downloads invoice PDFs, and saves them to your selected directory.")
+
+# Create a temporary directory as fallback
+temp_dir = tempfile.mkdtemp()
+st.sidebar.info(f"If you encounter permission issues, try using this temporary directory: {temp_dir}")
 
 # User inputs
 email = st.text_input("📧 Enter your Amazon email:", type="default")
 password = st.text_input("🔑 Enter your Amazon password:", type="password")
 orders_url = st.text_input("🔗 Enter Amazon orders list URL:")
-download_dir = st.text_input("📁 Enter directory to save invoices:", value=r"/app/invoices")
+download_dir = st.text_input("📁 Enter directory to save invoices:", value=os.path.join(os.path.expanduser("~"), "downloads"))
 
 # Ensure download directory exists
 if not os.path.exists(download_dir):
     try:
-        os.makedirs(download_dir)
+        os.makedirs(download_dir, exist_ok=True)
         st.success(f"Created download directory: {download_dir}")
     except Exception as e:
         st.error(f"Failed to create download directory: {e}")
+        st.info("Trying alternative download locations...")
+        
+        # Try alternative locations
+        alternative_locations = [
+            os.path.join(os.getcwd(), "downloads"),  # Current working directory
+            "/tmp/downloads",  # /tmp is usually writable
+            os.path.join(os.path.expanduser("~"), ".streamlit", "downloads")  # Streamlit config directory
+        ]
+        
+        for location in alternative_locations:
+            try:
+                os.makedirs(location, exist_ok=True)
+                download_dir = location
+                st.success(f"Created alternative download directory: {download_dir}")
+                break
+            except Exception as alt_e:
+                st.warning(f"Could not create directory at {location}: {alt_e}")
 
 if st.button("Start Downloading Invoices"):
     if not email or not password or not orders_url or not download_dir:
