@@ -107,8 +107,55 @@ if st.button("Start Downloading Invoices"):
                 
                 # Check for 2FA/OTP verification
                 if 'cvf-page-content' in response.text or 'auth-mfa-form' in response.text:
-                    st.error("❌ Amazon requires additional verification (OTP/2FA). This app doesn't support that yet.")
-                    st.stop()
+                    # Display 2FA input form
+                    st.warning("Amazon requires additional verification (OTP/2FA).")
+                    verification_code = st.text_input("Enter the verification code sent to your device:")
+                    
+                    if st.button("Submit Verification Code"):
+                        if not verification_code:
+                            st.error("Please enter the verification code.")
+                        else:
+                            try:
+                                # Find the 2FA form
+                                soup = BeautifulSoup(response.text, 'html.parser')
+                                form = soup.find('form', {'id': 'auth-mfa-form'}) or soup.find('form', {'name': 'cvf-form'})
+                                
+                                if not form:
+                                    st.error("Could not find the verification form.")
+                                    st.stop()
+                                
+                                # Get form data
+                                form_data = {}
+                                for input_tag in form.find_all('input'):
+                                    name = input_tag.get('name')
+                                    value = input_tag.get('value', '')
+                                    if name:
+                                        form_data[name] = value
+                                
+                                # Add verification code
+                                # Try different possible field names
+                                form_data['otpCode'] = verification_code
+                                form_data['code'] = verification_code
+                                form_data['cvf_verification_code'] = verification_code
+                                
+                                # Submit form
+                                post_url = form.get('action')
+                                if not post_url.startswith('http'):
+                                    post_url = 'https://www.amazon.com' + post_url
+                                
+                                response = session.post(post_url, data=form_data)
+                                
+                                # Check if verification was successful
+                                if 'auth-error-message' in response.text or 'cvf-page-content' in response.text or 'auth-mfa-form' in response.text:
+                                    st.error("Verification failed. Please check your code.")
+                                    st.stop()
+                                
+                                st.success("✅ Verification successful!")
+                            except Exception as e:
+                                st.error(f"Error during verification: {e}")
+                                st.stop()
+                    else:
+                        st.stop()
                 
                 st.success("✅ Successfully logged in!")
             
