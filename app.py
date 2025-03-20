@@ -39,7 +39,7 @@ if st.button("Start Downloading Invoices"):
         }
         options.add_experimental_option("prefs", prefs)
 
-        service = Service("/usr/lib/chromium/chromedriver")
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
 
         try:
