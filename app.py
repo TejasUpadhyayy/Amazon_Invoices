@@ -133,7 +133,8 @@ def login_to_amazon(session, email, password):
         
         # Check for OTP/verification
         if 'cvf-page-content' in response.text or 'auth-mfa-form' in response.text:
-            return False, "Amazon requires additional verification (OTP/2FA). This app doesn't support that yet."
+            # Return special status for 2FA
+            return "2FA_REQUIRED", response
         
         return True, "Login successful"
         
@@ -207,6 +208,50 @@ def parse_orders(html_content):
     
     return orders, "Successfully parsed orders"
 
+# Handle 2FA verification
+def handle_2fa(session, response, otp_code):
+    try:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find the form
+        form = soup.find('form', {'id': 'auth-mfa-form'}) or soup.find('form', {'name': 'cvf-form'})
+        
+        if not form:
+            return False, "Could not find the 2FA form."
+        
+        # Get all form inputs
+        form_data = {}
+        for input_tag in form.find_all('input'):
+            name = input_tag.get('name')
+            value = input_tag.get('value')
+            if name and value:
+                form_data[name] = value
+        
+        # Add the OTP code
+        form_data['otpCode'] = otp_code
+        # The field might be named differently
+        if 'code' in form_data:
+            form_data['code'] = otp_code
+        if 'cvf_verification_code' in form_data:
+            form_data['cvf_verification_code'] = otp_code
+        
+        # Get the form action URL
+        post_url = form.get('action')
+        if not post_url.startswith('http'):
+            post_url = 'https://www.amazon.com' + post_url
+        
+        # Submit the form
+        response = session.post(post_url, data=form_data)
+        
+        # Check if login was successful
+        if 'auth-error-message' in response.text or 'cvf-page-content' in response.text or 'auth-mfa-form' in response.text:
+            return False, "2FA verification failed. Please check your code."
+        
+        return True, "Login successful!"
+        
+    except Exception as e:
+        return False, f"Error during 2FA verification: {str(e)}"
+
 # Main function to handle button click
 if submit_button:
     if not email or not password:
@@ -217,14 +262,46 @@ if submit_button:
             session = create_session()
             
             # Try to login
-            success, message = login_to_amazon(session, email, password)
+            result, response_or_message = login_to_amazon(session, email, password)
             
-            if success:
-                st.success(message)
+            if result == True:
+                st.success(response_or_message)
                 st.session_state.session_cookies = dict(session.cookies)
                 st.session_state.logged_in = True
+            elif result == "2FA_REQUIRED":
+                st.warning("Amazon requires additional verification (OTP/2FA).")
+                st.session_state.pending_2fa = True
+                st.session_state.temp_session = session
+                st.session_state.temp_response = response_or_message
             else:
-                st.error(message)
+                st.error(response_or_message)
+
+# Handle 2FA verification if needed
+if 'pending_2fa' in st.session_state and st.session_state.pending_2fa:
+    st.subheader("📱 Two-Factor Authentication Required")
+    st.write("Please enter the verification code sent to your phone or email.")
+    
+    otp_code = st.text_input("Enter verification code:", key="otp_input")
+    
+    if st.button("Submit Verification Code"):
+        if not otp_code:
+            st.error("Please enter the verification code.")
+        else:
+            with st.spinner("Verifying..."):
+                session = st.session_state.temp_session
+                response = st.session_state.temp_response
+                
+                success, message = handle_2fa(session, response, otp_code)
+                
+                if success:
+                    st.success(message)
+                    st.session_state.session_cookies = dict(session.cookies)
+                    st.session_state.logged_in = True
+                    st.session_state.pending_2fa = False
+                    # Force a rerun to update the UI
+                    st.rerun()
+                else:
+                    st.error(message)
 
 # Button to fetch orders if logged in
 if st.session_state.logged_in:
