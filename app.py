@@ -9,29 +9,28 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 st.title("📦 Amazon Invoice & Order Summary Downloader")
-st.write("This app logs into Amazon, downloads invoice PDFs, and saves them to your selected directory.")
 
 # User inputs
 email = st.text_input("📧 Enter your Amazon email:", type="default")
 password = st.text_input("🔑 Enter your Amazon password:", type="password")
 orders_url = st.text_input("🔗 Enter Amazon orders list URL:")
-download_dir = st.text_input("📁 Enter directory to save invoices:", value=r"/tmp/invoices")
+download_dir = "/tmp/invoices"  # Streamlit Cloud compatible
 
 if st.button("Start Downloading Invoices"):
-    if not email or not password or not orders_url or not download_dir:
+    if not email or not password or not orders_url:
         st.error("❌ Please fill all fields!")
     else:
         st.info("🚀 Starting invoice download process...")
 
-        # Set up headless Chrome options
+        # Set up Chrome options
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument("--headless")  # Run in headless mode
+        chrome_options.add_argument("--headless=new")  # New headless mode
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_argument("--window-size=1920x1080")
 
-        # Configure Chrome to download PDFs automatically
+        # Set Chrome to download PDFs
         prefs = {
             "download.default_directory": download_dir,
             "download.prompt_for_download": False,
@@ -39,7 +38,7 @@ if st.button("Start Downloading Invoices"):
         }
         chrome_options.add_experimental_option("prefs", prefs)
 
-        # Launch browser
+        # Install ChromeDriver
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -62,11 +61,11 @@ if st.button("Start Downloading Invoices"):
             )
             st.info("✅ Orders list loaded successfully.")
 
-            # Process each order
-            for i in range(5):  # Process top 5 orders
+            # Process orders
+            for i in range(5):
                 try:
                     driver.get(orders_url)
-                    time.sleep(5)  # Wait for page to load
+                    time.sleep(5)
 
                     order_ids_elements = driver.find_elements(By.XPATH, '//*[@id="a-page"]/section/div/li/div/div/div[1]/div/div/div/h5/div[2]/div[1]/div/span[2]')
                     invoice_links_elements = driver.find_elements(By.XPATH, '//*[@id="a-page"]/section/div/li/div/div/div[1]/div/div/div/h5/div[2]/div[2]/div/ul/li[2]/span/a')
@@ -96,7 +95,6 @@ if st.button("Start Downloading Invoices"):
 
         finally:
             time.sleep(5)
-            if driver:
-                driver.quit()
-                st.success("✅ Process Completed & Browser Closed!")
+            driver.quit()
+            st.success("✅ Process Completed & Browser Closed!")
 
